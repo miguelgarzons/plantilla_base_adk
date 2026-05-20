@@ -1,0 +1,114 @@
+name: adk_helpdesk_project_builder
+version: 1.0.0
+language: es
+description: >
+  Skill para construir o refactorizar un proyecto ADK de mesa de ayuda,
+  replicando la arquitectura del repositorio: orquestador secuencial,
+  subagentes por responsabilidad, tools desacopladas, integracion MCP,
+  trazabilidad operativa y reglas de idempotencia.
+owners:
+  - equipo_mesa_ayuda
+
+input_schema:
+  type: object
+  required:
+    - objective
+    - operation_mode
+    - target_stack
+  properties:
+    objective:
+      type: string
+      description: Objetivo funcional del proyecto/agente.
+    operation_mode:
+      type: string
+      enum: [scaffold, refactor, migrate, harden]
+    target_stack:
+      type: string
+      description: Stack objetivo (ej. python+adk+gemini+mcp+docker).
+    domain:
+      type: string
+      description: Dominio del flujo (ej. mesa de ayuda, onboarding, cobranza).
+    external_systems:
+      type: array
+      items: { type: string }
+    constraints:
+      type: array
+      items: { type: string }
+    environments:
+      type: array
+      items: { type: string }
+    non_functional_requirements:
+      type: array
+      items: { type: string }
+
+output_contract:
+  type: object
+  required:
+    - architecture
+    - folder_structure
+    - implementation_plan
+    - validation_plan
+  properties:
+    architecture:
+      type: string
+      description: Diseno de agentes, subagentes, tools e integraciones.
+    folder_structure:
+      type: string
+      description: Arbol de carpetas propuesto.
+    implementation_plan:
+      type: string
+      description: Plan por fases (orden de construccion).
+    validation_plan:
+      type: string
+      description: Pruebas funcionales y operativas (logs/observabilidad).
+    runbook:
+      type: string
+      description: Pasos de despliegue y verificacion post-deploy.
+
+rules:
+  - Diseñar con un root_agent orquestador y subagentes por responsabilidad.
+  - Evitar acoplar reglas de negocio complejas dentro de un solo LLM prompt.
+  - Poner side-effects externos en tools (APIs, MCP, DB) y no en el texto del agente.
+  - Definir idempotencia para acciones criticas (cierres, envios, cobros, etc.).
+  - Definir observabilidad con logs estructurados por etapa (prefijo estable).
+  - Separar plantillas (HTML/texto) en archivos dedicados, no inline grande en codigo.
+  - Incluir fallback controlado y politicas de retry para llamadas externas/modelo.
+  - Incluir estrategia de configuracion por env vars y diferencias local vs produccion.
+
+architecture_reference:
+  root_agent: SequentialAgent
+  sequence:
+    - receptor_ingesta
+    - clasificador
+    - agentes_condicionales_de_negocio
+    - cierre_o_confirmacion
+  layers:
+    - subagents
+    - tools
+    - integrations/mcp
+    - templates
+    - config
+
+quality_gates:
+  - No duplicar side-effects en reintentos.
+  - Payloads de entrada con validacion estricta y errores explicitos.
+  - Logs suficientes para auditar cada decision y llamada externa.
+  - README actualizado con arquitectura real (no version desactualizada).
+  - Pruebas de humo para flujos exitosos y fallidos.
+
+model_profiles:
+  gemini:
+    temperature: 0.4
+    top_p: 0.9
+    max_output_tokens: 900
+  gpt:
+    temperature: 0.3
+    top_p: 0.9
+    max_output_tokens: 900
+  claude:
+    temperature: 0.3
+    max_tokens: 900
+  llama:
+    temperature: 0.35
+    top_p: 0.9
+    max_tokens: 1000

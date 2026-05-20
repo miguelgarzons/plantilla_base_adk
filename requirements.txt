@@ -1,0 +1,6 @@
+google-adk==1.26.0
+litellm
+mcp>=1.23.0
+python-dotenv
+openai>=1.40.0
+psycopg[binary]>=3.2.0

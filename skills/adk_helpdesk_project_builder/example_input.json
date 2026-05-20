@@ -1,0 +1,21 @@
+{
+  "objective": "Construir un agente ADK para gestionar tickets Zoho de cierre y cambio de documento con trazabilidad completa.",
+  "operation_mode": "scaffold",
+  "target_stack": "python+adk+gemini+mcp+docker",
+  "domain": "mesa de ayuda",
+  "external_systems": [
+    "Zoho Desk via MCP",
+    "API de perfil estudiantil"
+  ],
+  "constraints": [
+    "No duplicar correos ni comentarios en reintentos",
+    "Payload de entrada JSON con estructura fija",
+    "Diferencias local/prod deben ser auditables"
+  ],
+  "environments": ["local", "cloud-run"],
+  "non_functional_requirements": [
+    "Logs estructurados por etapa",
+    "Idempotencia en side-effects",
+    "Plantillas de correo separadas"
+  ]
+}

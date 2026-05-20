@@ -1,0 +1,29 @@
+{
+  "app_name": "{{app_name}}",
+  "root": [
+    "agents/{{app_name}}/agent.py",
+    "agents/{{app_name}}/subagents/orchestrator.py",
+    "agents/{{app_name}}/subagents/receptor.py",
+    "agents/{{app_name}}/subagents/clasificador.py",
+    "agents/{{app_name}}/subagents/cierre.py",
+    "agents/{{app_name}}/subagents/common.py",
+    "agents/{{app_name}}/subagents/logging_hooks.py",
+    "agents/{{app_name}}/subagents/__init__.py",
+    "agents/{{app_name}}/tools/zoho_actions.py",
+    "agents/{{app_name}}/tools/zoho_tools.py",
+    "agents/{{app_name}}/tools/__init__.py",
+    "agents/{{app_name}}/templates/ticket_reply_email.html",
+    "agents/{{app_name}}/integrations/mcp/config.py",
+    "agents/{{app_name}}/integrations/mcp/toolset_factory.py",
+    "config/mcp/servers.yaml",
+    "README.md"
+  ],
+  "optional": [
+    "agents/{{app_name}}/subagents/cambio_documento.py",
+    "agents/{{app_name}}/subagents/notas.py",
+    "agents/{{app_name}}/tools/student_profile.py",
+    "agents/{{app_name}}/tools/zoho_attachments.py",
+    "agents/{{app_name}}/tools/cedula_verifier.py",
+    "skills/"
+  ]
+}

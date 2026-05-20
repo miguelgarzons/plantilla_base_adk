@@ -1,0 +1,48 @@
+services:
+
+  adk-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    container_name: base_agent_example_dev
+    volumes:
+      - .:/app
+      - adk_root_state:/app/agents/.adk
+      - adk_base_agent_example:/app/agents/base_agent_example/.adk
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    restart: unless-stopped
+    command: >
+      sh -c "echo 'GEMINI_API_KEY loaded' && cd /app/agents && adk web . --host 0.0.0.0 --port 8000 --no_use_local_storage"
+
+  adk-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: base_agent_example_api
+    volumes:
+      - .:/app
+      - adk_root_state:/app/agents/.adk
+      - adk_base_agent_example:/app/agents/base_agent_example/.adk
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+
+    restart: unless-stopped
+    command: >
+      sh -c "echo 'GEMINI_API_KEY loaded' && cd /app/agents && adk api_server . --host 0.0.0.0 --port 8001 --no_use_local_storage"
+    networks:
+      - adk_shared_net
+
+volumes:
+  adk_root_state:
+  adk_base_agent_example:
+
+networks:
+  adk_shared_net:
+    external: true

@@ -1,0 +1,30 @@
+servers:
+  zoho:
+    enabled: true
+    transport: streamable_http
+    url: ${ZOHO_MCP_URL}
+    headers: {}
+    env: {}
+    timeout_seconds: 20
+    max_tools: 60
+    required_tool_names:
+      - "ZohoDesk_getAccessibleOrganizations"
+      - "ZohoDesk_getDepartments"
+      - "ZohoDesk_getDepartment"
+      - "ZohoDesk_listOfTickets"
+      - "ZohoDesk_searchTickets"
+    include_name_patterns:
+      - "ZohoDesk_.*Ticket.*"
+      - "ZohoDesk_.*Tickets.*"
+      - "ZohoDesk_listOfTickets"
+      - "ZohoDesk_searchTickets"
+      - "ZohoDesk_archivedTicketList"
+      - "ZohoDesk_getArchivedTickets"
+      - "ZohoDesk_.*Department.*"
+      - "ZohoDesk_getDepartments"
+      - "ZohoDesk_getDepartment"
+      - "ZohoDesk_getDepartmentsByIds"
+      - "ZohoDesk_getAgentsInDepartment"
+      - "ZohoDesk_getAccessibleOrganizations"
+      - "ZohoDesk_getOrganization"
+    tool_name_prefix: zoho
