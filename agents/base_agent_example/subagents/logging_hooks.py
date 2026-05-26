@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-logger = logging.getLogger("categorizador.pipeline")
+logger = logging.getLogger("adk.pipeline")
 
 
 def _extract_text_preview(user_content: Any) -> str:

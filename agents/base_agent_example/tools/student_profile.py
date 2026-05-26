@@ -1,3 +1,21 @@
+"""
+Ejemplo: herramienta de consulta/actualización de perfil via API REST externa.
+
+Este módulo muestra el patrón recomendado para integrar una API REST
+autenticada como herramienta (tool) de un agente ADK.
+
+Variables de entorno requeridas:
+    EXTERNAL_API_BASE_URL  - URL base de la API externa
+    EXTERNAL_API_USERNAME  - Usuario para autenticarse
+    EXTERNAL_API_PASSWORD  - Contraseña para autenticarse
+
+Patrón implementado:
+    1. Login con credenciales → obtener Bearer token
+    2. Cache del token en memoria
+    3. Re-autenticación automática si el token expira (401)
+    4. Funciones async que el agente puede usar como tools
+"""
+
 from __future__ import annotations
 
 import logging
@@ -7,26 +25,42 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://app360.cunapp.pro/api/v1"
-AUTH_USERNAME = "SDK-Agent"
-AUTH_PASSWORD = "ok3{10QT}t/1#B;+Xn#:>&"
-
 _cached_token: str | None = None
 
 
+def _get_api_config() -> tuple[str, str, str]:
+    """Retorna (base_url, username, password) desde variables de entorno."""
+    base_url = os.getenv("EXTERNAL_API_BASE_URL", "").strip()
+    username = os.getenv("EXTERNAL_API_USERNAME", "").strip()
+    password = os.getenv("EXTERNAL_API_PASSWORD", "").strip()
+
+    if not base_url:
+        raise ValueError(
+            "EXTERNAL_API_BASE_URL no configurado. "
+            "Define esta variable con la URL base de tu API externa."
+        )
+    if not username or not password:
+        raise ValueError(
+            "EXTERNAL_API_USERNAME y/o EXTERNAL_API_PASSWORD no configurados."
+        )
+    return base_url, username, password
+
+
 async def _get_bearer_token() -> str:
-    """Obtiene y cachea el Bearer token autenticándose en el API."""
+    """Obtiene y cachea el Bearer token autenticándose en la API."""
     global _cached_token
 
     if _cached_token:
         logger.info("🔐 Token ya cacheado, reutilizando.")
         return _cached_token
 
-    logger.info("🔐 API LOGIN → POST %s/auth/login | user=%s", BASE_URL, AUTH_USERNAME)
+    base_url, username, password = _get_api_config()
+
+    logger.info("🔐 API LOGIN → POST %s/auth/login | user=%s", base_url, username)
     async with httpx.AsyncClient() as client:
         response = await client.post(
-            f"{BASE_URL}/auth/login",
-            json={"username": AUTH_USERNAME, "password": AUTH_PASSWORD},
+            f"{base_url}/auth/login",
+            json={"username": username, "password": password},
             timeout=10.0,
         )
         logger.info("🔐 API LOGIN ← status=%s", response.status_code)
@@ -62,7 +96,7 @@ async def _make_authed_request(method: str, url: str, **kwargs) -> httpx.Respons
         "accept": "application/json",
         "Content-Type": "application/json",
     }
-    kwargs.pop("headers", None)  # evitar duplicado si alguien pasó headers por error
+    kwargs.pop("headers", None)
 
     async with httpx.AsyncClient() as client:
         response = await client.request(method, url, headers=headers, timeout=10.0, **kwargs)
@@ -78,37 +112,32 @@ async def _make_authed_request(method: str, url: str, **kwargs) -> httpx.Respons
 
 
 # ──────────────────────────────────────────────────────────────
-# GET: Consultar perfil del estudiante
+# Ejemplo: GET consultar recurso
 # ──────────────────────────────────────────────────────────────
 
-async def get_student_info(identification_number: str) -> dict:
+async def get_resource_info(resource_id: str) -> dict:
     """
-    Consulta la información actual de un estudiante por número de identificación.
+    Consulta información de un recurso por su identificador.
 
     Args:
-        identification_number: Número de identificación del estudiante.
+        resource_id: Identificador único del recurso.
 
     Returns:
-        Diccionario con los datos del estudiante, o {'error': '...'} si falla.
+        Diccionario con los datos del recurso, o {'error': '...'} si falla.
     """
-    url = f"{BASE_URL}/profile/bas-tercero/{identification_number}"
+    base_url, _, _ = _get_api_config()
+    url = f"{base_url}/resources/{resource_id}"
     logger.info("📡 GET → %s", url)
 
     try:
         response = await _make_authed_request("GET", url)
-        logger.info("📡 GET ← status=%s | documento=%s", response.status_code, identification_number)
+        logger.info("📡 GET ← status=%s | id=%s", response.status_code, resource_id)
 
         if response.status_code == 404:
-            return {"error": f"Estudiante '{identification_number}' no encontrado."}
+            return {"error": f"Recurso '{resource_id}' no encontrado."}
 
         response.raise_for_status()
-        data = response.json()
-        logger.info(
-            "✅ GET OK: fullName=%s | identificationType=%s",
-            data.get("fullName", "?"),
-            data.get("identificationType", "?"),
-        )
-        return data
+        return response.json()
 
     except httpx.HTTPStatusError as e:
         logger.error("❌ GET error HTTP %s: %s", e.response.status_code, e.response.text[:200])
@@ -119,59 +148,34 @@ async def get_student_info(identification_number: str) -> dict:
 
 
 # ──────────────────────────────────────────────────────────────
-# PATCH: Actualizar tipo de documento a Cédula de Ciudadanía
+# Ejemplo: PATCH actualizar recurso
 # ──────────────────────────────────────────────────────────────
 
-async def update_student_document_type(identification_number: str, student_data: dict) -> dict:
+async def update_resource(resource_id: str, updates: dict) -> dict:
     """
-    Actualiza el tipo de documento del estudiante de T.I. a C.C. (Cédula de Ciudadanía).
-    Usa los datos actuales del estudiante del GET para construir el body del PATCH.
+    Actualiza campos de un recurso.
 
     Args:
-        identification_number: Número de identificación del estudiante.
-        student_data: Datos actuales del estudiante obtenidos del GET.
+        resource_id: Identificador único del recurso.
+        updates: Diccionario con los campos a actualizar.
 
     Returns:
-        Diccionario con resultado de la operación, o {'error': '...'} si falla.
+        Diccionario con resultado de la operación.
     """
-    # Usar el id interno del estudiante (no el número de identificación)
-    student_id = student_data.get("id")
-    if not student_id:
-        logger.error("❌ PATCH abortado: no se encontró 'id' en student_data")
-        return {"error": "No se encontró el campo 'id' en los datos del estudiante."}
+    base_url, _, _ = _get_api_config()
+    url = f"{base_url}/resources/{resource_id}"
 
-    url = f"{BASE_URL}/profile/bas-tercero/{student_id}"
-    logger.info(
-        "📡 PATCH → %s | cambiando identificationType a 'C' (id=%s, doc=%s)",
-        url, student_id, identification_number,
-    )
-
-    # Construir body con datos actuales del estudiante + cambio de tipo de documento
-    body = {
-        "identificationType": "C",                                          # <- el cambio clave
-        "ipAddress":          "10.0.0.1",
-    }
-
-    # Limpiar campos None o vacíos para no enviar nulls innecesarios
-    body = {k: v for k, v in body.items() if v not in (None, "")}
-
-    logger.info("📡 PATCH body=%s", body)
+    # Limpiar campos None o vacíos
+    body = {k: v for k, v in updates.items() if v not in (None, "")}
+    logger.info("📡 PATCH → %s | body=%s", url, body)
 
     try:
-        response = await _make_authed_request(
-            "PATCH", url,
-            json=body,
-        )
-        logger.info("📡 PATCH ← status=%s | documento=%s", response.status_code, identification_number)
+        response = await _make_authed_request("PATCH", url, json=body)
+        logger.info("📡 PATCH ← status=%s | id=%s", response.status_code, resource_id)
 
         if response.status_code in (200, 201, 204):
             data = response.json() if response.content else {}
-            logger.info("✅ PATCH OK: documento=%s actualizado a C.C.", identification_number)
-            return {
-                "status":  "updated",
-                "message": "Tipo de documento actualizado exitosamente a Cédula de Ciudadanía.",
-                "data":    data,
-            }
+            return {"status": "updated", "data": data}
 
         response.raise_for_status()
         return {"status": "updated", "data": response.json() if response.content else {}}
@@ -181,103 +185,4 @@ async def update_student_document_type(identification_number: str, student_data:
         return {"error": f"Error HTTP {e.response.status_code}: {e.response.text}"}
     except Exception as e:
         logger.error("❌ PATCH error inesperado: %s", e)
-        return {"error": str(e)}
-
-
-def _normalize_gender_target(target_gender: str) -> str:
-    value = (target_gender or "").strip().lower()
-    if value in {"f", "femenino", "mujer", "female"}:
-        return "F"
-    if value in {"m", "masculino", "hombre", "male"}:
-        return "M"
-    return ""
-
-
-def _extract_current_gender(student_data: dict) -> str:
-    for key in ("gender", "sexo", "sex", "genero"):
-        value = str(student_data.get(key) or "").strip()
-        if value:
-            return _normalize_gender_target(value)
-    return ""
-
-
-async def update_student_gender(
-    identification_number: str,
-    student_data: dict,
-    target_gender: str,
-) -> dict:
-    """
-    Actualiza el genero del estudiante.
-
-    - Campo PATCH configurable con STUDENT_PROFILE_GENDER_FIELD (default: gender).
-    - Valores objetivo soportados: F/M (tambien mujer/hombre, femenino/masculino).
-    """
-    student_id = student_data.get("id")
-    if not student_id:
-        logger.error("❌ PATCH genero abortado: no se encontró 'id' en student_data")
-        return {"error": "No se encontró el campo 'id' en los datos del estudiante."}
-
-    normalized_target = _normalize_gender_target(target_gender)
-    if not normalized_target:
-        return {
-            "error": (
-                "Genero objetivo invalido. Use F/M o equivalentes "
-                "(mujer/hombre, femenino/masculino)."
-            )
-        }
-
-    current_gender = _extract_current_gender(student_data)
-    if current_gender and current_gender == normalized_target:
-        return {
-            "status": "already_updated",
-            "message": "El genero ya estaba actualizado en el perfil del estudiante.",
-            "current_gender": current_gender,
-        }
-
-    url = f"{BASE_URL}/profile/bas-tercero/{student_id}"
-    gender_field = os.getenv("STUDENT_PROFILE_GENDER_FIELD", "gender").strip() or "gender"
-    body = {
-        gender_field: normalized_target,
-        "ipAddress": "10.0.0.1",
-    }
-    body = {k: v for k, v in body.items() if v not in (None, "")}
-
-    logger.info(
-        "📡 PATCH → %s | campo=%s | genero=%s | id=%s | doc=%s",
-        url,
-        gender_field,
-        normalized_target,
-        student_id,
-        identification_number,
-    )
-    logger.info("📡 PATCH body=%s", body)
-
-    try:
-        response = await _make_authed_request("PATCH", url, json=body)
-        logger.info(
-            "📡 PATCH ← status=%s | documento=%s",
-            response.status_code,
-            identification_number,
-        )
-
-        if response.status_code in (200, 201, 204):
-            data = response.json() if response.content else {}
-            return {
-                "status": "updated",
-                "message": "Genero actualizado exitosamente en el perfil del estudiante.",
-                "target_gender": normalized_target,
-                "data": data,
-            }
-
-        response.raise_for_status()
-        return {
-            "status": "updated",
-            "target_gender": normalized_target,
-            "data": response.json() if response.content else {},
-        }
-    except httpx.HTTPStatusError as e:
-        logger.error("❌ PATCH genero error HTTP %s: %s", e.response.status_code, e.response.text[:200])
-        return {"error": f"Error HTTP {e.response.status_code}: {e.response.text}"}
-    except Exception as e:
-        logger.error("❌ PATCH genero error inesperado: %s", e)
         return {"error": str(e)}

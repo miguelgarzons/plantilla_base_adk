@@ -1,34 +1,65 @@
+"""
+Herramientas para leer y descargar adjuntos de tickets Zoho Desk
+via API REST directa.
+
+Variables de entorno requeridas:
+    ZOHO_DESK_BASE_URL     - URL base de la API de Zoho Desk
+                             (default: https://desk.zoho.com/api/v1)
+    ZOHO_TOKEN_WEBHOOK_URL - URL del webhook que devuelve el token OAuth
+    ZOHO_TOKEN_WEBHOOK_USER - Usuario para autenticarse en el webhook
+    ZOHO_TOKEN_WEBHOOK_PASS - Contraseña del webhook
+"""
+
 from __future__ import annotations
 
-import logging
 import base64
-from typing import Any
+import logging
+import os
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
-ZOHO_DESK_BASE = "https://desk.zoho.com/api/v1"
-TOKEN_WEBHOOK_URL = "https://n8nfab.cunapp.pro/webhook/GetToken"
-TOKEN_WEBHOOK_USER = "FabricaSoftware"
-TOKEN_WEBHOOK_PASS = "F4Br1KS0FT#%"
+# ── Configuración via env vars ──────────────────────────────────
+ZOHO_DESK_BASE = os.getenv("ZOHO_DESK_BASE_URL", "https://desk.zoho.com/api/v1")
 
 _cached_zoho_token: str | None = None
 
 
+def _get_webhook_config() -> tuple[str, str, str]:
+    """Retorna (url, user, password) del webhook de token, o lanza error."""
+    url = os.getenv("ZOHO_TOKEN_WEBHOOK_URL", "").strip()
+    user = os.getenv("ZOHO_TOKEN_WEBHOOK_USER", "").strip()
+    password = os.getenv("ZOHO_TOKEN_WEBHOOK_PASS", "").strip()
+
+    if not url:
+        raise ValueError(
+            "ZOHO_TOKEN_WEBHOOK_URL no configurado. "
+            "Define esta variable de entorno con la URL del webhook que devuelve el token OAuth."
+        )
+    if not user or not password:
+        raise ValueError(
+            "ZOHO_TOKEN_WEBHOOK_USER y/o ZOHO_TOKEN_WEBHOOK_PASS no configurados. "
+            "Define estas variables de entorno para autenticarte en el webhook."
+        )
+    return url, user, password
+
+
 async def _get_zoho_token() -> str:
-    """Obtiene el token de Zoho Desk desde el webhook de n8n."""
+    """Obtiene el token de Zoho Desk desde el webhook configurado."""
     global _cached_zoho_token
 
     if _cached_zoho_token:
         logger.info("🔐 Zoho token cacheado, reutilizando.")
         return _cached_zoho_token
 
+    url, user, password = _get_webhook_config()
+
     logger.info("🔐 Obteniendo Zoho token desde webhook...")
     async with httpx.AsyncClient() as client:
         response = await client.get(
-            TOKEN_WEBHOOK_URL,
-            auth=(TOKEN_WEBHOOK_USER, TOKEN_WEBHOOK_PASS),
+            url,
+            auth=(user, password),
             timeout=15.0,
         )
         logger.info("🔐 Webhook token ← status=%s", response.status_code)
@@ -65,7 +96,7 @@ async def get_ticket_attachments(ticket_id: str, org_id: str) -> list[dict]:
     Obtiene todos los archivos adjuntos de un ticket Zoho recorriendo sus threads.
 
     Returns:
-        Lista de dicts con: name, url, content_type (si disponible)
+        Lista de dicts con: name, url, size
     """
     token = await _get_zoho_token()
     headers = {

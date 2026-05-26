@@ -6,7 +6,7 @@ import os
 from ..integrations.mcp.config import load_mcp_servers
 
 
-logger = logging.getLogger("categorizador.pipeline")
+logger = logging.getLogger("adk.pipeline")
 
 
 def estado_integracion_zoho() -> dict[str, str]:
