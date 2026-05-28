@@ -17,34 +17,38 @@ Plantilla lista para clonar y construir agentes de IA con [Google ADK](https://a
 ```text
 .
 ├── agents/
-│   └── base_agent_example/              ← Tu agente (renombra según tu proyecto)
+│   ├── base_agent_example/              ← ADK 1: agente principal (clasificador)
+│   │   ├── __init__.py
+│   │   ├── agent.py                     # Entry point: define root_agent
+│   │   ├── subagents/
+│   │   │   ├── __init__.py
+│   │   │   ├── orchestrator.py          # SequentialAgent orquestador
+│   │   │   ├── clasificador.py          # LlmAgent con Zoho MCP
+│   │   │   ├── remote_enrichment.py     # RemoteA2aAgent → consume ADK 2
+│   │   │   ├── respondedor.py           # LlmAgent respondedor final
+│   │   │   ├── common.py               # Modelo + dependencias compartidas
+│   │   │   └── logging_hooks.py         # Hooks de trazabilidad
+│   │   ├── tools/
+│   │   │   ├── zoho_tools.py            # Herramientas Zoho
+│   │   │   ├── zoho_attachments.py      # Adjuntos Zoho (REST API)
+│   │   │   ├── student_profile.py       # API REST autenticada
+│   │   │   └── cedula_verifier.py       # Visión multimodal
+│   │   └── integrations/
+│   │       └── mcp/                     # Integración MCP Zoho
+│   │
+│   └── enrichment_agent/                ← ADK 2: agente de enriquecimiento (A2A)
 │       ├── __init__.py
-│       ├── agent.py                     # Entry point: define root_agent
-│       ├── subagents/
-│       │   ├── __init__.py
-│       │   ├── orchestrator.py          # SequentialAgent orquestador
-│       │   ├── clasificador.py          # Ejemplo: LlmAgent con Zoho MCP
-│       │   ├── common.py               # Modelo + dependencias compartidas
-│       │   └── logging_hooks.py         # Hooks de trazabilidad (before/after)
-│       ├── tools/
-│       │   ├── __init__.py
-│       │   ├── zoho_tools.py            # Herramientas Zoho (estado, guía, contexto)
-│       │   ├── zoho_attachments.py      # Lectura de adjuntos Zoho (REST API)
-│       │   ├── student_profile.py       # Ejemplo: tool de API REST autenticada
-│       │   └── cedula_verifier.py       # Ejemplo: tool de visión multimodal
-│       └── integrations/
-│           └── mcp/
-│               ├── __init__.py
-│               ├── config.py            # Loader de config YAML → McpServerConfig
-│               └── toolset_factory.py   # Factory que crea MCP toolsets
+│       └── agent.py                     # LlmAgent con tools de enriquecimiento
+│
 ├── config/
 │   └── mcp/
 │       └── servers.yaml                 # Catálogo de servidores MCP
-├── .env.example                         # ← Variables de entorno (copiar a .env)
+├── .env.example                         # Variables de entorno (copiar a .env)
 ├── .gitignore
 ├── .dockerignore
-├── Dockerfile                           # Multi-stage: dev + runtime
-├── docker-compose.yml                   # adk-dev (web) + adk-api (api_server)
+├── Dockerfile                           # Multi-stage: ADK 1 (dev + runtime)
+├── Dockerfile.enrichment                # Multi-stage: ADK 2 (dev + runtime A2A)
+├── docker-compose.yml                   # adk-dev + adk-api + adk-enrichment
 ├── requirements.txt
 └── README.md
 ```
@@ -106,26 +110,24 @@ adk web . --port 8000
 
 ---
 
-## Arquitectura ADK
+## Arquitectura ADK (Monorepo con A2A)
 
 ```text
-┌─────────────────────────────────────────┐
-│           root_agent (agent.py)         │
-│                                         │
-│  SequentialAgent (orchestrator.py)       │
-│  ├── agente_clasificador                │
-│  ├── (tu siguiente subagente)           │
-│  └── (...)                              │
-│                                         │
-│  Tools:                                 │
-│  ├── zoho_tools.py (Zoho helpers)       │
-│  ├── zoho_attachments.py (REST API)     │
-│  ├── student_profile.py (API ejemplo)   │
-│  └── cedula_verifier.py (visión)        │
-│                                         │
-│  MCP:                                   │
-│  └── Zoho Desk (config/mcp/servers.yaml)│
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────┐       ┌──────────────────────────────┐
+│  ADK 1 — base_agent_example              │       │  ADK 2 — enrichment_agent    │
+│                                          │       │                              │
+│  SequentialAgent (orchestrator.py)        │ A2A   │  LlmAgent (agent.py)         │
+│  ├── agente_clasificador                 │──────▶│  Tools:                      │
+│  ├── RemoteA2aAgent (remote_enrichment)  │◀──────│  ├── buscar_historial_cliente │
+│  └── agente_respondedor                  │ HTTP  │  ├── obtener_prioridad       │
+│                                          │       │  └── buscar_articulos_kb     │
+│  Tools + MCP:                            │       │                              │
+│  ├── zoho_tools.py                       │       │  Puerto: 8002                │
+│  ├── zoho_attachments.py                 │       │  Protocolo: A2A (JSON-RPC)   │
+│  └── Zoho Desk MCP                       │       └──────────────────────────────┘
+│                                          │
+│  Puerto: 8000 (web) / 8001 (api)         │
+└──────────────────────────────────────────┘
 ```
 
 ### Conceptos clave de ADK
@@ -135,6 +137,7 @@ adk web . --port 8000
 | **root_agent** | El agente principal que ADK busca al arrancar | `agent.py` |
 | **SequentialAgent** | Orquestador que ejecuta subagentes en orden | `orchestrator.py` |
 | **LlmAgent** | Agente que usa un LLM (Gemini) con instrucciones | `clasificador.py` |
+| **RemoteA2aAgent** | Proxy que consume un agente remoto via A2A | `remote_enrichment.py` |
 | **BaseAgent** | Agente custom en Python puro (sin LLM) | `cedula_verifier.py` |
 | **Tools** | Funciones Python que el agente puede invocar | `tools/` |
 | **MCP Toolset** | Herramientas externas conectadas via protocolo MCP | `integrations/mcp/` |
@@ -252,11 +255,66 @@ LlmAgent(
 
 ---
 
+## Consumir un agente remoto via A2A
+
+Este monorepo incluye un ejemplo completo de comunicación Agent-to-Agent (A2A).
+
+### ¿Cómo funciona?
+
+1. **ADK 2** (`enrichment_agent`) se expone como servidor A2A en el puerto 8002
+2. **ADK 1** (`base_agent_example`) usa `RemoteA2aAgent` para consumirlo
+3. El `SequentialAgent` trata al agente remoto como un subagente más
+4. Cuando ADK 2 termina, el flujo continúa automáticamente en ADK 1
+
+### Levantar ambos ADKs con Docker
+
+```bash
+# Levantar el monorepo completo (ADK 1 web + ADK 2 A2A)
+docker-compose up --build adk-dev adk-enrichment
+
+# Verificar que ADK 2 está accesible
+curl http://localhost:8002/.well-known/agent.json
+```
+
+### Levantar sin Docker (desarrollo local)
+
+```bash
+# Terminal 1: ADK 2 (agente de enriquecimiento)
+cd agents
+adk api_server --a2a . --port 8002
+
+# Terminal 2: ADK 1 (agente principal)
+cd agents
+adk web . --port 8000
+```
+
+### Agregar tu propio agente remoto
+
+1. Crea tu agente en `agents/mi_agente_remoto/`
+2. Exponlo como A2A: `adk api_server --a2a . --port 8003`
+3. Crea un `RemoteA2aAgent` en tu orquestador:
+
+```python
+from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
+
+def build_mi_agente_remoto() -> RemoteA2aAgent:
+    return RemoteA2aAgent(
+        name="mi_agente_remoto",
+        description="Descripción de lo que hace.",
+        agent_card="http://localhost:8003/.well-known/agent.json",
+    )
+```
+
+---
+
 ## Patrones incluidos como ejemplo
 
 | Archivo | Patrón | Descripción |
 |---------|--------|-------------|
 | `clasificador.py` | LlmAgent + MCP | Agente con LLM que usa herramientas externas via MCP |
+| `remote_enrichment.py` | RemoteA2aAgent | Proxy que consume un agente remoto via protocolo A2A |
+| `respondedor.py` | LlmAgent pipeline | Agente que combina resultados de pasos anteriores |
+| `enrichment_agent/` | Agente A2A remoto | ADK independiente expuesto como servicio A2A |
 | `student_profile.py` | REST API autenticada | Tool que consume API REST con Bearer token y retry en 401 |
 | `cedula_verifier.py` | Visión multimodal | BaseAgent + LlmAgent para analizar imágenes con Gemini |
 | `zoho_attachments.py` | REST API + webhook auth | Descarga de archivos con token obtenido de webhook |
@@ -269,5 +327,6 @@ LlmAgent(
 
 - [ADK Documentation](https://adk.dev/)
 - [ADK Python GitHub](https://github.com/google/adk-python)
+- [A2A Protocol](https://github.com/google/A2A)
 - [Gemini API](https://ai.google.dev/)
 - [MCP Protocol](https://modelcontextprotocol.io/)

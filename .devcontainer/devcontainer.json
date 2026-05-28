@@ -2,6 +2,7 @@
   "name": "Google ADK Dev Container",
   "dockerComposeFile": "../docker-compose.yml",
   "service": "adk-dev",
+  "runServices": ["adk-dev", "adk-enrichment"],
   "workspaceFolder": "/app",
 
   "customizations": {
@@ -29,6 +30,6 @@
     }
   },
 
-  "forwardPorts": [8000, 8001],
+  "forwardPorts": [8000, 8001, 8002],
   "remoteUser": "root"
 }

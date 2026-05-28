@@ -1,5 +1,24 @@
+# ══════════════════════════════════════════════════════════════
+# Monorepo ADK — Docker Compose
+# ══════════════════════════════════════════════════════════════
+#
+# Servicios:
+#   adk-dev           → ADK 1 (interfaz web de desarrollo)
+#   adk-api           → ADK 1 (API REST para integraciones)
+#   adk-enrichment    → ADK 2 (agente de enriquecimiento via A2A)
+#
+# Uso:
+#   # Levantar todo (dev + enriquecimiento):
+#   docker-compose up --build adk-dev adk-enrichment
+#
+#   # Solo API + enriquecimiento:
+#   docker-compose up --build adk-api adk-enrichment
+#
+# ══════════════════════════════════════════════════════════════
+
 services:
 
+  # ── ADK 1: Interfaz web de desarrollo ──────────────────────
   adk-dev:
     build:
       context: .
@@ -14,10 +33,18 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      # Apuntar al ADK 2 dentro de la red Docker
+      - REMOTE_ENRICHMENT_AGENT_CARD_URL=http://adk-enrichment:8002/.well-known/agent.json
     restart: unless-stopped
+    depends_on:
+      - adk-enrichment
+    networks:
+      - adk_internal
     command: >
       sh -c "cd /app/agents && adk web . --host 0.0.0.0 --port 8000 --no_use_local_storage"
 
+  # ── ADK 1: API REST para integraciones ─────────────────────
   adk-api:
     build:
       context: .
@@ -32,16 +59,47 @@ services:
       - "8001:8001"
     env_file:
       - .env
+    environment:
+      - REMOTE_ENRICHMENT_AGENT_CARD_URL=http://adk-enrichment:8002/.well-known/agent.json
     restart: unless-stopped
+    depends_on:
+      - adk-enrichment
+    networks:
+      - adk_internal
+      - adk_shared_net
     command: >
       sh -c "cd /app/agents && adk api_server . --host 0.0.0.0 --port 8001 --no_use_local_storage"
+
+  # ── ADK 2: Agente de enriquecimiento (servicio A2A) ────────
+  adk-enrichment:
+    build:
+      context: .
+      dockerfile: Dockerfile.enrichment
+      target: dev
+    container_name: adk_enrichment
+    volumes:
+      # Solo montar el agente de enriquecimiento en /app/agents/
+      # (este path ya existe en la imagen con permisos del user adk)
+      - ./agents/enrichment_agent:/app/agents/enrichment_agent
+    ports:
+      - "8002:8002"
+    env_file:
+      - .env
+    restart: unless-stopped
     networks:
-      - adk_shared_net
+      - adk_internal
+    working_dir: /app/agents
+    command: >
+      uvicorn enrichment_agent.a2a_server:app --host 0.0.0.0 --port 8002
 
 volumes:
   adk_root_state:
   adk_agent_state:
 
 networks:
+  # Red interna para comunicación A2A entre ADK 1 y ADK 2
+  adk_internal:
+    driver: bridge
+  # Red externa compartida (para integraciones con otros servicios)
   adk_shared_net:
     external: true
